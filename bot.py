@@ -2,10 +2,11 @@ import json
 import os
 import sys
 import time
+from http.cookiejar import CookieJar
 from html import escape
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 
 
 STATE_FILE = Path("seen.json")
@@ -51,7 +52,18 @@ def fetch_items(search_url):
             "AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"
         ),
     }
-    payload = request_json(api_url(search_url), headers=headers)
+
+    cookie_jar = CookieJar()
+    opener = build_opener(HTTPCookieProcessor(cookie_jar))
+
+    homepage_request = Request("https://www.vinted.fr/", headers=headers)
+    with opener.open(homepage_request, timeout=25) as response:
+        response.read(1)
+
+    catalog_request = Request(api_url(search_url), headers=headers)
+    with opener.open(catalog_request, timeout=25) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
     return payload.get("items", [])
 
 
@@ -75,6 +87,7 @@ def item_price(item):
         amount = price.get("amount") or price.get("value") or "?"
         currency = price.get("currency_code") or "EUR"
         return f"{amount} {currency}"
+
     return str(price or "Prix inconnu")
 
 
@@ -84,6 +97,7 @@ def telegram_send(token, chat_id, item):
     size = escape(str(item.get("size_title") or "Taille non indiquée"))
     price = escape(item_price(item))
     url = item.get("url") or f"https://www.vinted.fr/items/{item['id']}"
+
     message = (
         f"🆕 <b>{title}</b>\n"
         f"💶 {price}\n"
@@ -91,6 +105,7 @@ def telegram_send(token, chat_id, item):
         f"📏 {size}\n\n"
         f'<a href="{escape(url, quote=True)}">Voir l’annonce</a>'
     )
+
     body = urlencode(
         {
             "chat_id": chat_id,
@@ -99,11 +114,13 @@ def telegram_send(token, chat_id, item):
             "disable_web_page_preview": "false",
         }
     ).encode("utf-8")
+
     result = request_json(
         f"https://api.telegram.org/bot{token}/sendMessage",
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         data=body,
     )
+
     if not result.get("ok"):
         raise RuntimeError(f"Telegram a refusé le message: {result}")
 
@@ -123,6 +140,7 @@ def main():
         fresh = fresh[:3]
 
     sent_ids = []
+
     for item in reversed(fresh[:10]):
         telegram_send(token, chat_id, item)
         sent_ids.append(str(item["id"]))
@@ -130,6 +148,7 @@ def main():
 
     current_ids = [str(item["id"]) for item in items if item.get("id")]
     save_seen((seen + sent_ids + current_ids)[-MAX_SEEN:])
+
     print(f"{len(items)} annonces trouvées, {len(sent_ids)} envoyées.")
 
 
