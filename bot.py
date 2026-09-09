@@ -35,16 +35,29 @@ def request_json(url, headers=None, data=None, timeout=45):
 
 def api_url(search_url):
     parsed = urlparse(search_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc.endswith("vinted.fr"):
+
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc.endswith("vinted.fr")
+    ):
         raise RuntimeError(
             "VINTED_SEARCH_URL doit être un lien de recherche vinted.fr."
         )
 
-    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query = dict(
+        parse_qsl(
+            parsed.query,
+            keep_blank_values=True,
+        )
+    )
     query["order"] = "newest_first"
     query["page"] = "1"
     query["per_page"] = "20"
-    return f"https://www.vinted.fr/api/v2/catalog/items?{urlencode(query)}"
+
+    return (
+        "https://www.vinted.fr/api/v2/catalog/items?"
+        f"{urlencode(query)}"
+    )
 
 
 def vinted_session():
@@ -52,15 +65,26 @@ def vinted_session():
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "fr-FR,fr;q=0.9",
         "User-Agent": (
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) "
-            "AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"
+            "Mozilla/5.0 "
+            "(iPhone; CPU iPhone OS 18_0 like Mac OS X) "
+            "AppleWebKit/605.1.15 "
+            "Version/18.0 Mobile/15E148 Safari/604.1"
         ),
     }
 
-    opener = build_opener(HTTPCookieProcessor(CookieJar()))
-    homepage_request = Request("https://www.vinted.fr/", headers=headers)
+    opener = build_opener(
+        HTTPCookieProcessor(CookieJar())
+    )
 
-    with opener.open(homepage_request, timeout=25) as response:
+    homepage_request = Request(
+        "https://www.vinted.fr/",
+        headers=headers,
+    )
+
+    with opener.open(
+        homepage_request,
+        timeout=25,
+    ) as response:
         response.read(1)
 
     return opener, headers
@@ -68,16 +92,23 @@ def vinted_session():
 
 def fetch_items(search_url):
     opener, headers = vinted_session()
-    request = Request(api_url(search_url), headers=headers)
+
+    request = Request(
+        api_url(search_url),
+        headers=headers,
+    )
 
     with opener.open(request, timeout=25) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+        payload = json.loads(
+            response.read().decode("utf-8")
+        )
 
     return payload.get("items", []), opener, headers
 
 
 def fetch_item_details(item, opener, headers):
     item_id = item.get("id")
+
     if not item_id:
         return item
 
@@ -97,13 +128,18 @@ def fetch_item_details(item, opener, headers):
         return merged
 
     except Exception as exc:
-        print(f"Détails Vinted indisponibles pour {item_id}: {exc}")
+        print(
+            f"Détails Vinted indisponibles "
+            f"pour {item_id}: {exc}"
+        )
         return item
 
 
 def load_seen():
     try:
-        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        return json.loads(
+            STATE_FILE.read_text(encoding="utf-8")
+        )
     except (FileNotFoundError, json.JSONDecodeError):
         return []
 
@@ -123,8 +159,15 @@ def item_price(item):
     price = item.get("price")
 
     if isinstance(price, dict):
-        amount = price.get("amount") or price.get("value") or "?"
-        currency = price.get("currency_code") or "EUR"
+        amount = (
+            price.get("amount")
+            or price.get("value")
+            or "?"
+        )
+        currency = (
+            price.get("currency_code")
+            or "EUR"
+        )
         return f"{amount} {currency}"
 
     return str(price or "Prix inconnu")
@@ -142,7 +185,10 @@ def photo_urls(item):
         if not isinstance(photo, dict):
             continue
 
-        high_resolution = photo.get("high_resolution") or {}
+        high_resolution = (
+            photo.get("high_resolution")
+            or {}
+        )
 
         candidates = [
             high_resolution.get("url")
@@ -153,7 +199,11 @@ def photo_urls(item):
         ]
 
         url = next(
-            (value for value in candidates if value),
+            (
+                value
+                for value in candidates
+                if value
+            ),
             None,
         )
 
@@ -164,7 +214,10 @@ def photo_urls(item):
 
 
 def extract_openai_text(payload):
-    if isinstance(payload.get("output_text"), str):
+    if isinstance(
+        payload.get("output_text"),
+        str,
+    ):
         return payload["output_text"].strip()
 
     texts = []
@@ -181,23 +234,35 @@ def extract_openai_text(payload):
 
 
 def analyze_item(openai_key, item):
-    title = str(item.get("title") or "Non indiqué")
-    brand = str(item.get("brand_title") or "Non indiquée")
-    size = str(item.get("size_title") or "Non indiquée")
+    title = str(
+        item.get("title")
+        or "Non indiqué"
+    )
+    brand = str(
+        item.get("brand_title")
+        or "Non indiquée"
+    )
+    size = str(
+        item.get("size_title")
+        or "Non indiquée"
+    )
     condition = str(
         item.get("status")
         or item.get("status_title")
         or "Non indiqué"
     )
     description = str(
-        item.get("description") or "Non disponible"
+        item.get("description")
+        or "Non disponible"
     )[:1800]
     price = item_price(item)
 
     prompt = f"""
-Tu es un expert prudent en achat-revente de vêtements d'occasion en France.
+Tu es un expert prudent en achat-revente
+de vêtements d'occasion en France.
 
-Analyse cette annonce Vinted pour une revente rapide.
+Analyse cette annonce Vinted
+pour une revente rapide.
 
 Données :
 - Titre : {title}
@@ -207,20 +272,28 @@ Données :
 - État : {condition}
 - Description : {description}
 
-Réponds en français, en 7 lignes maximum, exactement avec ces rubriques :
+Réponds en français, en 7 lignes maximum,
+exactement avec ces rubriques :
 
 🎯 VERDICT : ACHÈTE / À VÉRIFIER / LAISSE
 🛡️ AUTHENTICITÉ : risque faible / moyen / élevé / impossible à juger
 💶 REVENTE RAPIDE : fourchette en euros
-📈 MARGE BRUTE : estimation avant port et frais
+💰 BÉNÉFICE NET : estimation après prix d'achat, protection Vinted,
+livraison vers l'acheteur-revendeur et marge de négociation, hors impôts
 ⚡ VITESSE : rapide / moyenne / lente
 ✅ POURQUOI : raison principale
 🔍 AVANT D'ACHETER : vérification précise à demander
 
-Sois sévère.
-Une photo insuffisante, une incohérence ou un doute de contrefaçon
-interdit le verdict ACHÈTE.
-Ne prétends jamais garantir l'authenticité.
+Règles absolues :
+- Le bas de la fourchette du bénéfice net estimé
+  doit atteindre au moins 30 €.
+  Sinon, réponds LAISSE.
+- Si la revente n'est pas rapide,
+  réponds LAISSE.
+- Une photo insuffisante, une incohérence
+  ou un doute de contrefaçon interdit
+  le verdict ACHÈTE.
+- Ne prétends jamais garantir l'authenticité.
 """.strip()
 
     content = [
@@ -258,8 +331,10 @@ Ne prétends jamais garantir l'authenticité.
     result = request_json(
         "https://api.openai.com/v1/responses",
         headers={
-            "Authorization": f"Bearer {openai_key}",
-            "Content-Type": "application/json",
+            "Authorization":
+            f"Bearer {openai_key}",
+            "Content-Type":
+            "application/json",
         },
         data=body,
         timeout=60,
@@ -275,7 +350,12 @@ Ne prétends jamais garantir l'authenticité.
     return text[:2200]
 
 
-def telegram_send(token, chat_id, item, analysis):
+def telegram_send(
+    token,
+    chat_id,
+    item,
+    analysis,
+):
     title = escape(
         str(
             item.get("title")
@@ -322,7 +402,10 @@ def telegram_send(token, chat_id, item, analysis):
     ).encode("utf-8")
 
     result = request_json(
-        f"https://api.telegram.org/bot{token}/sendMessage",
+        (
+            "https://api.telegram.org/"
+            f"bot{token}/sendMessage"
+        ),
         headers={
             "Content-Type":
             "application/x-www-form-urlencoded"
@@ -337,12 +420,22 @@ def telegram_send(token, chat_id, item, analysis):
 
 
 def main():
-    token = required_env("TELEGRAM_BOT_TOKEN")
-    chat_id = required_env("TELEGRAM_CHAT_ID")
-    search_url = required_env("VINTED_SEARCH_URL")
-    openai_key = required_env("OPENAI_API_KEY")
+    token = required_env(
+        "TELEGRAM_BOT_TOKEN"
+    )
+    chat_id = required_env(
+        "TELEGRAM_CHAT_ID"
+    )
+    search_url = required_env(
+        "VINTED_SEARCH_URL"
+    )
+    openai_key = required_env(
+        "OPENAI_API_KEY"
+    )
 
-    items, opener, headers = fetch_items(search_url)
+    items, opener, headers = fetch_items(
+        search_url
+    )
 
     seen = load_seen()
     seen_set = {
@@ -358,7 +451,9 @@ def main():
 
     sent_ids = []
 
-    for item in reversed(fresh[:MAX_AI_ITEMS]):
+    for item in reversed(
+        fresh[:MAX_AI_ITEMS]
+    ):
         detailed_item = fetch_item_details(
             item,
             opener,
@@ -370,9 +465,10 @@ def main():
                 openai_key,
                 detailed_item,
             )
+
         except Exception as exc:
             print(
-                f"Analyse IA indisponible pour "
+                "Analyse IA indisponible pour "
                 f"{item.get('id')}: {exc}"
             )
             analysis = (
@@ -382,6 +478,19 @@ def main():
                 "de revente."
             )
 
+        first_line = (
+            analysis.splitlines()[0].upper()
+            if analysis
+            else ""
+        )
+
+        if "LAISSE" in first_line:
+            print(
+                f"Annonce {item.get('id')} ignorée : "
+                "bénéfice net ou vitesse insuffisante."
+            )
+            continue
+
         telegram_send(
             token,
             chat_id,
@@ -389,7 +498,9 @@ def main():
             analysis,
         )
 
-        sent_ids.append(str(item["id"]))
+        sent_ids.append(
+            str(item["id"])
+        )
         time.sleep(1)
 
     current_ids = [
@@ -408,7 +519,7 @@ def main():
 
     print(
         f"{len(items)} annonces trouvées, "
-        f"{len(sent_ids)} analysées et envoyées."
+        f"{len(sent_ids)} bonnes affaires envoyées."
     )
 
 
